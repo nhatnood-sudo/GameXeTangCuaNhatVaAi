@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Tank Battle 2D - Boss Arena Update</title>
+    <style>
+        :root {
+            --p1-color: #3498db;
+            --p2-color: #e74c3c;
+            --boss-color: #c0392b;
+            --bg-color: #2c3e50;
+            --text-color: #ecf0f1;
+            --accent-color: #f1c40f;
+        }
+        body {
+            background-color: #1a1a1a;
+            color: var(--text-color);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 20px;
+            height: 100vh;
+            box-sizing: border-box;
+        }
+        h1 { margin: 0 0 20px 0; color: var(--accent-color); text-transform: uppercase; letter-spacing: 2px; }
+        #gameWrapper {
+            position: relative;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.7);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        canvas {
+            background-color: var(--bg-color);
+            display: block;
+            cursor: crosshair;
+        }
+        #uiLayer {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 15px;
+            box-sizing: border-box;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            font-size: 18px;
+            font-weight: bold;
+            text-shadow: 2px 2px 2px rgba(0,0,0,0.8);
+            background: rgba(0,0,0,0.3);
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .player-stat { display: flex; flex-direction: column; gap: 5px; }
+        .p1-stat { color: var(--p1-color); }
+        .p2-stat { color: var(--p2-color); text-align: right; }
+        .boss-stat { color: var(--boss-color); flex-grow: 1; text-align: center; font-size: 22px; }
+        
+        .boom-indicator span { display: inline-block; width: 10px; height: 10px; background: #555; margin-right: 2px; border-radius: 50%; }
+        .boom-indicator span.ready { background: var(--accent-color); box-shadow: 0 0 5px var(--accent-color); }
+
+        #messageArea {
+            text-align: center; font-size: 36px; font-weight: 900; color: var(--accent-color);
+            text-shadow: 3px 3px 6px rgba(0,0,0,0.9);
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 100%;
+        }
+
+        /* Overlays */
+        .overlay-screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            z-index: 100; transition: opacity 0.3s;
+            pointer-events: auto;
+        }
+        .overlay-screen.hidden { opacity: 0; pointer-events: none; }
+        
+        .menu-card {
+            background: #2c3e50; padding: 40px; border-radius: 15px; border: 3px solid var(--accent-color);
+            text-align: center; box-shadow: 0 0 30px var(--accent-color);
+        }
+        .btn-group { display: flex; flex-direction: column; gap: 15px; margin: 30px 0; }
+        button {
+            background: linear-gradient(to bottom, #f1c40f, #d4ac0d);
+            border: none; padding: 15px 30px; font-size: 20px; font-weight: bold; color: #2c3e50;
+            cursor: pointer; border-radius: 8px; transition: transform 0.1s, filter 0.2s;
+            text-transform: uppercase;
+        }
+        button:hover { transform: scale(1.05); filter: brightness(1.1); }
+        button:active { transform: scale(0.98); }
+        .btn-boss { background: linear-gradient(to bottom, #c0392b, #962d22); color: white; }
+
+        .controls-hint {
+            margin-top: 20px; font-size: 14px; color: #bdc3c7; text-align: left;
+            background: rgba(0,0,0,0.2); padding: 15px; border-radius: 8px;
+        }
+        .key { display: inline-block; padding: 2px 6px; background: #444; border-radius: 4px; border-bottom: 2px solid #222; font-family: monospace; }
+    </style>
+</head>
+<body>
+
+    <h1>TANK ASSAULT 2D - BOSS ARENA</h1>
+
+    <div id="gameWrapper">
+        <canvas id="gameCanvas" width="960" height="640"></canvas>
+        
+        <div id="uiLayer">
+            <div class="top-bar" id="normalStats">
+                <div class="player-stat p1-stat">
+                    <div>P1 [Xanh]: <span id="score1">0</span>/10 Trận thắng</div>
+                    <div>HP: <span id="hp1">5</span></div>
+                    <div class="boom-indicator" id="boom1"><span></span><span></span><span></span><span></span><span class="ready"></span></div>
+                </div>
+                <div class="player-stat p2-stat">
+                    <div><span id="p2NameLabel">P2</span> [Đỏ]: <span id="score2">0</span>/10 Trận thắng</div>
+                    <div>HP: <span id="hp2">5</span></div>
+                    <div class="boom-indicator" id="boom2"><span></span><span></span><span></span><span></span><span class="ready"></span></div>
+                </div>
+            </div>
+
+            <div class="top-bar hidden" id="bossStats" style="display: none;">
+                 <div class="player-stat p1-stat">
+                    <div>P1 HP: <span id="bossHp1">5</span></div>
+                     <div class="boom-indicator" id="bossBoom1"></div>
+                </div>
+                <div class="boss-stat">
+                     BOSS MÁY: <span id="bossHP">200</span> / 200
+                </div>
+                 <div class="player-stat p2-stat">
+                    <div><span id="bossP2Name">AI</span> HP: <span id="bossHp2">5</span></div>
+                     <div class="boom-indicator" id="bossBoom2"></div>
+                </div>
+            </div>
+
+            <div id="messageArea"></div>
+        </div>
+
+        <div id="menuOverlay" class="overlay-screen">
+            <div class="menu-card">
+                <h2 style="color: var(--accent-color); margin:0; font-size: 32px;">CHỌN CHẾ ĐỘ CHƠI</h2>
+                <div class="btn-group">
+                    <button onclick="startGame('pvp')">1 vs 1 (Người đấu Người)</button>
+                    <button onclick="startGame('pvai')">1 vs AI (Đấu với Máy)</button>
+                    <button class="btn-boss" onclick="startGame('boss')">Đấu BOSS (Hợp sức)</button>
+                </div>
+                <div class="controls-hint">
+                    <b>P1 (Xanh):</b> <span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span> di chuyển | <span class="key">SPACE</span> bắn<br>
+                    <b>P2 (Đỏ):</b> <span class="key">↑</span><span class="key">←</span><span class="key">↓</span><span class="key">→</span> di chuyển | <span class="key">ENTER</span> bắn<br>
+                    <em style="color: var(--accent-color); display:block; margin-top:10px;">*Mỗi phát đạn thứ 5 là Đạn Boom. Đạn Boom chỉ xuyên tường ở chế độ BOSS.</em>
+                </div>
+            </div>
+        </div>
+
+        <div id="gameOverOverlay" class="overlay-screen hidden">
+            <div class="menu-card" style="padding: 60px;">
+                <h2 id="winnerText" style="font-size: 40px; color: var(--accent-color);">KẾT THÚC!</h2>
+                <button onclick="resetToMenu()" style="margin-top: 30px;">Quay Về Menu Chính</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+/** === CẤU HÌNH GAME === **/
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// Constants
+const BLOCK_SIZE = 40; 
+const GRID_W = canvas.width / BLOCK_SIZE; // 24 ô ngang
+const GRID_H = canvas.height / BLOCK_SIZE; // 16 ô dọc
+const TANK_RADIUS = 14; 
+const BOSS_RADIUS = 35; // Boss to gần bằng 2 ô
+const TANK_SPEED = 3.5;
+const BOSS_SPEED = 1.5;
+const ROT_SPEED = 0.07;
+const PLAYER_MAX_HP = 5;
+const BOSS_MAX_HP = 200;
+const WIN_SCORE = 10;
+const BOOM_SHOT_INTERVAL = 5;
+
+// Game State
+let gameMode = 'pvp'; // 'pvp', 'pvai', 'boss'
+let gameRunning = false;
+let score1 = 0;
+let score2 = 0;
+let mapLayout = [];
+let entities = []; // Chứa tanks, boss
+let bullets = [];
+let keys = {};
+let bossAttackTimer = 0;
+
+// --- MAP DESIGN ---
+// Map đặc biệt cho Boss: Rộng rãi, có 4 góc nấp chữ U và 2 tường nhỏ
+const bossMap = [
+    "111111111111111111111111",
+    "100000000000000000000001",
+    "101111000000000000111101", // U-shape trên trái & phải (phần đáy)
+    "101001000000000000100101", // U-shape (phần khe hở để nấp)
+    "101001000000000000100101", 
+    "101111000000000000111101", // U-shape (đóng lại, thành chữ C vuông)
+    "100000000000000000000001",
+    "100000000110011000000001", // 2 Bức tường nhỏ ở giữa map
+    "100000000110011000000001", 
+    "100000000000000000000001",
+    "101111000000000000111101", // U-shape dưới trái & phải
+    "101001000000000000100101",
+    "101001000000000000100101",
+    "101111000000000000111101",
+    "100000000000000000000001",
+    "111111111111111111111111"
+];
+
+// Map thường (PvP)
+const maps = [
+    [ "111111111111111111111111", "100000000001100000000001", "100000000001100000000001", "100111100000000001111001", "100100100011110001001001", "100000000110011000000001", "100000000100001000000001", "100111000000000000111001", "110111000000000000111011", "100000000111111000000001", "100000000000000000000001", "100011100011110001110001", "100000000000000000000001", "100000000000000000000001", "100100000000000000001001", "111111111111111111111111" ],
+    [ "111111111111111111111111", "100001000000000010000001", "101001010100101010010101", "100000000111100000000001", "101010100000000010101001", "100000011100111000000001", "111010000000000001011111", "100011111000011111000001", "100000000000000000000001", "101110111000011101110001", "100000000000000000000001", "100100000000000000001001", "101010101000010101010101", "100000000000000000000001", "100000000011000000000001", "111111111111111111111111" ],
+    [ "111111111111111111111111", "100000000000000000000001", "101110000000000000011101", "101010000000000000010101", "101010000000000000010101", "100000000001100000000001", "100000000011110000000001", "100000000110011000000001", "100000000100001000000001", "100000000000000000000001", "101010000000000000010101", "101010000000000000010101", "101110000000000000011101", "100000000000000000000001", "100000000000000000000001", "111111111111111111111111" ],
+    [ "111111111111111111111111", "100000010000000010000001", "100000010000000010000001", "100000010001100010000001", "100000000001100000000001", "111110000000000000011111", "100000000000000000000001", "100000000111111000000001", "100000000111111000000001", "100000000000000000000001", "111110000000000000011111", "100000000001100000000001", "100000010001100010000001", "100000010000000010000001", "100000010000000010000001", "111111111111111111111111" ]
+];
+
+// --- CÁC LỚP ĐỐI TƯỢNG ---
+
+class Entity {
+    constructor(x, y, radius, color) {
+        this.x = x; this.y = y;
+        this.radius = radius;
+        this.color = color;
+        this.angle = 0;
+        this.dead = false;
+    }
+    drawBody(ctx) {
+        ctx.beginPath();
+        ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = this.color; ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 3; ctx.stroke();
+        ctx.closePath();
+    }
+}
+
+class Tank extends Entity {
+    constructor(x, y, id, isAI) {
+        super(x, y, TANK_RADIUS, id === 1 ? 'var(--p1-color)' : 'var(--p2-color)');
+        this.id = id; // 1 or 2
+        this.isAI = isAI;
+        this.hp = PLAYER_MAX_HP;
+        this.cooldown = 0;
+        this.shotCount = 0;
+    }
+
+    draw() {
+        if (this.dead) return;
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.angle);
+        // Nòng súng
+        ctx.fillStyle = '#333';
+        ctx.fillRect(5, -6, this.radius + 8, 12);
+        // Thân
+        this.drawBody(ctx);
+        // Mũi tên hướng
+        ctx.beginPath(); ctx.moveTo(this.radius - 5, -this.radius + 5); ctx.lineTo(this.radius + 2, 0); ctx.lineTo(this.radius - 5, this.radius - 5);
+        ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 2; ctx.stroke();
+        ctx.restore();
+    }
+
+    update(targets) {
+        if (this.dead) return;
+        if (this.cooldown > 0) this.cooldown--;
+
+        let move = 0, turn = 0, shoot = false;
+
+        if (!this.isAI) {
+            if (this.id === 1) {
+                if (keys['KeyW']) move = 1; if (keys['KeyS']) move = -1;
+                if (keys['KeyA']) turn = -1; if (keys['KeyD']) turn = 1;
+                if (keys['Space']) shoot = true;
+            } else {
+                if (keys['ArrowUp']) move = 1; if (keys['ArrowDown']) move = -1;
+                if (keys['ArrowLeft']) turn = -1; if (keys['ArrowRight']) turn = 1;
+                if (keys['Enter']) shoot = true;
+            }
+        } else {
+            // AI Simple Logic
+            let target = targets[0]; // Target đầu tiên
+            if (target && !target.dead) {
+                let dx = target.x - this.x, dy = target.y - this.y;
+                let dist = Math.sqrt(dx*dx + dy*dy);
+                let targetAngle = Math.atan2(dy, dx);
+                let diff = targetAngle - this.angle;
+                while (diff <= -Math.PI) diff += Math.PI * 2;
+                while (diff > Math.PI) diff -= Math.PI * 2;
+
+                if (Math.abs(diff) > 0.1) turn = Math.sign(diff);
+                
+                let optimalDist = gameMode === 'boss' ? 300 : 150; // Giữ khoảng cách xa boss hơn
+                if (dist > optimalDist) move = 1;
+                else if (dist < optimalDist - 50) move = -0.5;
+
+                if (Math.abs(diff) < 0.3 && dist < 500 && this.cooldown <= 0) {
+                   if (hasLineOfSight(this.x, this.y, target.x, target.y) || gameMode === 'boss') shoot = true;
+                }
+            }
+        }
+
+        this.angle += turn * ROT_SPEED;
+        
+        let vx = Math.cos(this.angle) * move * TANK_SPEED;
+        let vy = Math.sin(this.angle) * move * TANK_SPEED;
+
+        if (!checkWallCollision(this.x + vx, this.y, this.radius)) this.x += vx;
+        if (!checkWallCollision(this.x, this.y + vy, this.radius)) this.y += vy;
+
+        if (shoot && this.cooldown <= 0) this.shoot();
+    }
+
+    shoot() {
+        this.shotCount++;
+        let isBoom = (this.shotCount % BOOM_SHOT_INTERVAL === 0);
+        let penetrates = isBoom && gameMode === 'boss';
+        let damage = isBoom ? 3 : 1;
+        
+        bullets.push(new Bullet(this.x, this.y, this.angle, this.id - 1, isBoom, damage, penetrates));
+        this.cooldown = 25;
+        updateBoomIndicators();
+    }
+}
+
+class Boss extends Entity {
+    constructor(x, y) {
+        super(x, y, BOSS_RADIUS, 'var(--boss-color)');
+        this.hp = BOSS_MAX_HP;
+        this.changeDirTimer = 0;
+        this.moveDir = 0;
+    }
+
+    draw() {
+        if (this.dead) return;
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        this.drawBody(ctx);
+        // Trang trí Boss
+        ctx.beginPath(); ctx.arc(0, 0, this.radius - 10, 0, Math.PI*2);
+        ctx.strokeStyle = '#7f2a24'; ctx.lineWidth = 5; ctx.stroke();
+        ctx.fillStyle = '#e74c3c'; ctx.fill();
+        ctx.beginPath(); ctx.moveTo(0, -this.radius); ctx.lineTo(0, this.radius);
+        ctx.moveTo(-this.radius, 0); ctx.lineTo(this.radius, 0);
+        ctx.strokeStyle = '#5a1a15'; ctx.lineWidth = 2; ctx.stroke();
+        ctx.restore();
+    }
+
+    update() {
+        if (this.dead) return;
+
+        this.changeDirTimer--;
+        if (this.changeDirTimer <= 0) {
+            this.moveDir = Math.random() * Math.PI * 2;
+            this.changeDirTimer = 100;
+        }
+        
+        // Di chuyển Boss
+        let vx = Math.cos(this.moveDir) * BOSS_SPEED;
+        let vy = Math.sin(this.moveDir) * BOSS_SPEED;
+        
+        // Check va chạm kỹ hơn cho Boss to
+        if (!checkWallCollision(this.x + vx, this.y, this.radius)) {
+            this.x += vx;
+        } else {
+            this.moveDir = Math.random() * Math.PI * 2; // Đụng tường đổi hướng ngay
+        }
+
+        if (!checkWallCollision(this.x, this.y + vy, this.radius)) {
+            this.y += vy;
+        } else {
+            this.moveDir = Math.random() * Math.PI * 2;
+        }
+
+        bossAttackTimer--;
+        if (bossAttackTimer <= 0) {
+            this.circularAttack();
+            bossAttackTimer = 180;
+        }
+    }
+
+    circularAttack() {
+        let numBullets = 18;
+        let gapIndex = Math.floor(Math.random() * numBullets);
+        let baseAngle = Math.random(); 
+
+        for (let i = 0; i < numBullets; i++) {
+            if (i === gapIndex || i === (gapIndex + 1) % numBullets || i === (gapIndex + 2) % numBullets) continue; 
+            let angle = baseAngle + (Math.PI * 2 / numBullets) * i;
+            bullets.push(new Bullet(this.x, this.y, angle, 2, false, 1, false));
+        }
+    }
+}
+
+class Bullet {
+    constructor(x, y, angle, ownerType, isBoom, damage, penetrates) {
+        this.x = x; this.y = y;
+        this.vx = Math.cos(angle) * (isBoom ? 8 : 7);
+        this.vy = Math.sin(angle) * (isBoom ? 8 : 7);
+        this.ownerType = ownerType; 
+        this.isBoom = isBoom;
+        this.damage = damage;
+        this.penetrates = penetrates;
+        this.radius = isBoom ? 7 : 4;
+        this.active = true;
+        this.x += this.vx * 3; this.y += this.vy * 3;
+    }
+
+    update() {
+        this.x += this.vx; this.y += this.vy;
+        if (!this.penetrates && checkWallCollision(this.x, this.y, this.radius)) this.active = false;
+        if (this.x < 0 || this.x > canvas.width || this.y < 0 || this.y > canvas.height) this.active = false;
+    }
+
+    draw() {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = this.isBoom ? '#e67e22' : '#f1c40f'; 
+        ctx.fill();
+        if (this.isBoom) { ctx.strokeStyle = '#d35400'; ctx.lineWidth = 2; ctx.stroke(); }
+        ctx.closePath();
+    }
+}
+
+// --- HỆ THỐNG VẬT LÝ ---
+
+function checkWallCollision(x, y, r) {
+    // Kiểm tra 4 điểm cực của hình tròn (Trên, Dưới, Trái, Phải) để tránh xuyên tường
+    let points = [
+        {x: x - r, y: y}, {x: x + r, y: y},
+        {x: x, y: y - r}, {x: x, y: y + r}
+    ];
+
+    for (let p of points) {
+        let gx = Math.floor(p.x / BLOCK_SIZE);
+        let gy = Math.floor(p.y / BLOCK_SIZE);
+        if (gy >= 0 && gy < GRID_H && gx >= 0 && gx < GRID_W && mapLayout[gy][gx] === '1') {
+            return true;
+        }
+    }
+    return false;
+}
+
+function hasLineOfSight(x1, y1, x2, y2) {
+    let dist = Math.hypot(x2-x1, y2-y1);
+    let steps = dist / (BLOCK_SIZE/2);
+    let dx = (x2-x1)/steps, dy = (y2-y1)/steps;
+    for(let i=1; i<steps; i++){
+        if(checkWallCollision(x1 + dx*i, y1 + dy*i, 2)) return false;
+    }
+    return true;
+}
+
+// Game Loop
+function gameLoop() {
+    if (!gameRunning) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawMap();
+
+    // Update Entities
+    entities.forEach(e => {
+        if (e instanceof Tank) {
+            let targets = gameMode === 'boss' ? entities.filter(ent => ent instanceof Boss) : entities.filter(ent => ent !== e && ent instanceof Tank);
+            e.update(targets);
+        } else {
+            e.update();
+        }
+    });
+
+    // Update Bullets
+    for (let i = bullets.length - 1; i >= 0; i--) {
+        let b = bullets[i];
+        b.update();
+        
+        if (b.active) {
+            for (let e of entities) {
+                if (e.dead) continue;
+                let isTarget = false;
+                if (gameMode === 'boss') {
+                    if (e instanceof Boss && b.ownerType < 2) isTarget = true;
+                    if (e instanceof Tank && b.ownerType === 2) isTarget = true;
+                } else {
+                    if (e instanceof Tank && e.id - 1 !== b.ownerType) isTarget = true;
+                }
+
+                if (isTarget && Math.hypot(b.x - e.x, b.y - e.y) < e.radius + b.radius) {
+                    e.hp -= b.damage;
+                    b.active = false;
+                    updateHPUI();
+                    if (e.hp <= 0) e.dead = true;
+                    break; 
+                }
+            }
+        }
+        if (!b.active) bullets.splice(i, 1);
+        else b.draw();
+    }
+
+    entities.forEach(e => e.draw());
+    checkWinCondition();
+    if (gameRunning) requestAnimationFrame(gameLoop);
+}
+
+function drawMap() {
+    for (let y = 0; y < GRID_H; y++) {
+        for (let x = 0; x < GRID_W; x++) {
+            if (mapLayout[y][x] === '1') {
+                let bx = x * BLOCK_SIZE, by = y * BLOCK_SIZE;
+                ctx.fillStyle = '#34495e';
+                ctx.fillRect(bx + 2, by + 2, BLOCK_SIZE - 4, BLOCK_SIZE - 4);
+                ctx.strokeStyle = '#5d6d7e'; ctx.lineWidth = 2;
+                ctx.strokeRect(bx + 4, by + 4, BLOCK_SIZE - 8, BLOCK_SIZE - 8);
+            }
+        }
+    }
+}
+
+function checkWinCondition() {
+    let p1 = entities.find(e => e instanceof Tank && e.id === 1);
+    let p2 = entities.find(e => e instanceof Tank && e.id === 2);
+    let boss = entities.find(e => e instanceof Boss);
+
+    if (gameMode === 'boss') {
+        if (boss.dead) endGame("NGƯỜI CHƠI CHIẾN THẮNG BOSS!");
+        else if (p1.dead && p2.dead) endGame("BOSS ĐÃ HỦY DIỆT TẤT CẢ!");
+    } else {
+        if (p1.dead || p2.dead) {
+            gameRunning = false;
+            let roundWinner = p2.dead ? "P1 (Xanh)" : (gameMode === 'pvai' ? "AI (Đỏ)" : "P2 (Đỏ)");
+            if (p2.dead) score1++; else score2++;
+            updateHPUI();
+            showMessage(`${roundWinner} thắng ván này!`);
+            
+            if (score1 >= WIN_SCORE || score2 >= WIN_SCORE) {
+                 setTimeout(() => endGame(score1 >= WIN_SCORE ? "P1 VÔ ĐỊCH!" : (gameMode === 'pvai' ? "AI VÔ ĐỊCH!" : "P2 VÔ ĐỊCH!")), 2000);
+            } else {
+                 setTimeout(startRound, 2000);
+            }
+        }
+    }
+}
+
+// UI & Logic Setup
+function startGame(mode) {
+    gameMode = mode;
+    document.getElementById('menuOverlay').classList.add('hidden');
+    document.getElementById('p2NameLabel').innerText = (mode === 'pvai') ? "AI" : "P2";
+    document.getElementById('bossP2Name').innerText = (mode === 'pvai' || mode === 'boss') ? (mode=='boss' && 'pvp' ? "P2" : "AI") : "P2";
+    
+    score1 = 0; score2 = 0;
+    updateHPUI();
+    startRound();
+}
+
+function startRound() {
+    gameRunning = false;
+    entities = []; bullets = []; keys = {};
+    bossAttackTimer = 120;
+
+    // QUAN TRỌNG: Chọn map
+    if (gameMode === 'boss') {
+        mapLayout = bossMap; // Map riêng cho Boss
+    } else {
+        mapLayout = maps[Math.floor(Math.random() * maps.length)]; // Map random cho PvP
+    }
+    
+    let p1Pos = findSpawn(2, 2); // Tìm vị trí an toàn góc trái trên
+    let p1 = new Tank(p1Pos.x, p1Pos.y, 1, false);
+    entities.push(p1);
+
+    let p2Pos = findSpawn(GRID_W - 3, GRID_H - 3); // Tìm vị trí an toàn góc phải dưới
+    let p2 = new Tank(p2Pos.x, p2Pos.y, 2, gameMode !== 'pvp'); 
+    p2.angle = Math.PI;
+    entities.push(p2);
+
+    if (gameMode === 'boss') {
+        // Boss spawn chính giữa map
+        let cx = (GRID_W/2) * BLOCK_SIZE;
+        let cy = (GRID_H/2) * BLOCK_SIZE;
+        entities.push(new Boss(cx, cy));
+        
+        // Dời P2 về cùng phía với P1 một chút để dễ support
+        let p2NewPos = findSpawn(4, 2);
+        p2.x = p2NewPos.x; p2.y = p2NewPos.y; p2.angle = 0;
+    }
+
+    showMessage(gameMode === 'boss' ? "TIÊU DIỆT BOSS!" : "BẮT ĐẦU!");
+    updateHPUI();
+    updateBoomIndicators();
+    
+    setTimeout(() => {
+        showMessage("");
+        gameRunning = true;
+        requestAnimationFrame(gameLoop);
+    }, 1500);
+}
+
+function findSpawn(gx, gy) {
+    for(let r=0; r<8; r++) {
+        for(let y = gy-r; y <= gy+r; y++) {
+            for(let x = gx-r; x <= gx+r; x++) {
+                if(y>0 && y<GRID_H-1 && x>0 && x<GRID_W-1 && mapLayout[y][x] === '0') {
+                    return {x: x*BLOCK_SIZE + BLOCK_SIZE/2, y: y*BLOCK_SIZE + BLOCK_SIZE/2};
+                }
+            }
+        }
+    }
+    return {x: BLOCK_SIZE*2, y: BLOCK_SIZE*2};
+}
+
+function updateHPUI() {
+    let p1 = entities.find(e => e instanceof Tank && e.id === 1);
+    let p2 = entities.find(e => e instanceof Tank && e.id === 2);
+    let boss = entities.find(e => e instanceof Boss);
+
+    document.getElementById('normalStats').style.display = gameMode === 'boss' ? 'none' : 'flex';
+    document.getElementById('bossStats').style.display = gameMode === 'boss' ? 'flex' : 'none';
+
+    if (gameMode === 'boss') {
+        document.getElementById('bossHP').innerText = boss ? Math.max(0, boss.hp) : 0;
+        document.getElementById('bossHp1').innerText = p1 ? Math.max(0, p1.hp) : 0;
+        document.getElementById('bossHp2').innerText = p2 ? Math.max(0, p2.hp) : 0;
+    } else {
+        document.getElementById('score1').innerText = score1;
+        document.getElementById('score2').innerText = score2;
+        document.getElementById('hp1').innerText = p1 ? Math.max(0, p1.hp) : 0;
+        document.getElementById('hp2').innerText = p2 ? Math.max(0, p2.hp) : 0;
+    }
+}
+
+function updateBoomIndicators() {
+    [1, 2].forEach(id => {
+        let tank = entities.find(e => e instanceof Tank && e.id === id);
+        if (!tank) return;
+        let shotsLeft = BOOM_SHOT_INTERVAL - (tank.shotCount % BOOM_SHOT_INTERVAL);
+        let html = '';
+        for(let i=0; i<BOOM_SHOT_INTERVAL-1; i++) html += `<span class="${i < BOOM_SHOT_INTERVAL - shotsLeft ? 'ready' : ''}"></span>`;
+        html += `<span class="${shotsLeft === BOOM_SHOT_INTERVAL || shotsLeft === 0 ? 'ready' : ''}" style="transform:scale(1.3)"></span>`;
+        
+        let suffix = gameMode === 'boss' ? 'bossBoom' : 'boom';
+        document.getElementById(suffix + id).innerHTML = html;
+    });
+}
+
+function showMessage(msg) {
+    document.getElementById('messageArea').innerText = msg;
+}
+
+function endGame(text) {
+    gameRunning = false;
+    document.getElementById('winnerText').innerText = text;
+    document.getElementById('gameOverOverlay').classList.remove('hidden');
+}
+
+function resetToMenu() {
+    document.getElementById('gameOverOverlay').classList.add('hidden');
+    document.getElementById('menuOverlay').classList.remove('hidden');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+}
+
+window.addEventListener('keydown', e => {
+    if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
+    keys[e.code] = true;
+});
+window.addEventListener('keyup', e => keys[e.code] = false);
+
+</script>
+</body>
+</html>
